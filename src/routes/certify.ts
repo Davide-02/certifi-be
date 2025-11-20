@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { generateSHA256 } from "../utils/hash";
 import { uploadFile, getPresignedUrl } from "../utils/upload";
-import { writeToBaseTestnet } from "../utils/blockchain";
+import { storeHash } from "../utils/blockchain";
 import { signHash } from "../utils/signature";
 import { saveCertificate } from "../utils/db";
 
@@ -36,8 +36,8 @@ export async function certifyFile(req: Request, res: Response) {
     // 4. Genera presigned URL con expiration 5 minuti
     const presignedUrl = await getPresignedUrl(fileKey);
 
-    // 5. Scrivi hash su Base testnet (mock)
-    const txHash = await writeToBaseTestnet(hash);
+    // 5. Scrivi hash su Base chain
+    const txHash = await storeHash(hash);
 
     // 6. Firma digitale dell'hash (server-side)
     const signature = signHash(hash);
@@ -82,8 +82,6 @@ export async function certifyFile(req: Request, res: Response) {
     });
   } catch (error) {
     console.error("Errore durante la certificazione:", error);
-    return res
-      .status(500)
-      .json({ error: "Errore durante la certificazione" });
+    return res.status(500).json({ error: "Errore durante la certificazione" });
   }
 }

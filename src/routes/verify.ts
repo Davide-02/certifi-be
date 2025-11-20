@@ -140,8 +140,7 @@ export async function verifyCertificate(req: Request, res: Response) {
       checks,
       chainVerification: chainVerification.exists
         ? {
-            txHash: chainVerification.txHash,
-            blockNumber: chainVerification.blockNumber,
+            storedHash: chainVerification.storedHash,
           }
         : null,
       qrPayload: qrPayload || null,
