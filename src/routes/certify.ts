@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import { generateSHA256 } from "../utils/hash";
-import { uploadFile, getPresignedUrl } from "../utils/upload";
 import { storeHash } from "../utils/blockchain";
 import { signHash } from "../utils/signature";
 import { saveCertificate } from "../utils/db";
@@ -30,11 +29,11 @@ export async function certifyFile(req: Request, res: Response) {
     // 2. Genera hash SHA-256
     const hash = generateSHA256(buffer);
 
-    // 3. Upload file su S3/R2 (bucket privato) - ritorna solo la key
-    const fileKey = await uploadFile(buffer, file.originalname, file.mimetype);
-
-    // 4. Genera presigned URL con expiration 5 minuti
-    const presignedUrl = await getPresignedUrl(fileKey);
+    // 3-4. Integrazione S3 disabilitata temporaneamente
+    // const fileKey = await uploadFile(buffer, file.originalname, file.mimetype);
+    // const presignedUrl = await getPresignedUrl(fileKey);
+    const fileKey = `s3-disabled-${hash.slice(0, 16)}`;
+    const presignedUrl = null;
 
     // 5. Scrivi hash su Base chain
     const txHash = await storeHash(hash);
@@ -75,7 +74,7 @@ export async function certifyFile(req: Request, res: Response) {
       success: true,
       hash,
       fileKey, // Solo la key, non l'URL pubblico
-      presignedUrl, // URL firmato valido 5 minuti
+      presignedUrl, // Disabilitato finché S3 non è configurato
       txHash,
       baseExplorerUrl: `https://sepolia.basescan.org/tx/${txHash}`,
       qrPayload, // Payload completo per QR code

@@ -1,10 +1,8 @@
 import { Request, Response } from "express";
 import { getCertificateByHash } from "../utils/db";
-import { downloadFile, fileExists } from "../utils/upload";
 import { generateSHA256 } from "../utils/hash";
-import { verifyOnChain } from "../utils/blockchain";
+import { verifyHashOnChain } from "../utils/blockchain";
 import { verifySignature } from "../utils/signature";
-import fetch from "node-fetch";
 
 /**
  * GET /verify
@@ -48,69 +46,28 @@ export async function verifyCertificate(req: Request, res: Response) {
       });
     }
 
-    // 1. Controlla se esiste nel DB
+    // 1. Verifica hash sulla blockchain PRIMA di tutto
+    const chainResponse = await verifyHashOnChain(targetHash);
+
+    // 2. Controlla se esiste nel DB
     const certificate = await getCertificateByHash(targetHash);
 
-    if (!certificate) {
-      return res.json({
-        verified: false,
-        error: "Certificato non trovato nel database",
-        hash: targetHash,
-        checks: {
-          dbExists: false,
-          r2Access: null,
-          hashMatch: null,
-          onChain: null,
-          signature: null,
-        },
-      });
-    }
-
-    const checks = {
-      dbExists: true,
-      r2Access: false,
-      hashMatch: false,
-      onChain: false,
+    const checks: {
+      dbExists: boolean;
+      r2Access: boolean | null;
+      hashMatch: boolean | null;
+      onChain: boolean;
+      signature: boolean;
+    } = {
+      dbExists: !!certificate,
+      r2Access: null, // Integrazione S3 disabilitata
+      hashMatch: null, // Integrazione S3 disabilitata
+      onChain: chainResponse,
       signature: false,
     };
 
-    // 2. Controlla R2 access e ricalcola hash
-    let fileBuffer: Buffer | null = null;
-    let calculatedHash: string | null = null;
-
-    try {
-      const exists = await fileExists(certificate.fileKey);
-      if (exists) {
-        checks.r2Access = true;
-        fileBuffer = await downloadFile(certificate.fileKey);
-        calculatedHash = generateSHA256(fileBuffer);
-        checks.hashMatch = calculatedHash === targetHash;
-      }
-    } catch (error) {
-      console.error("Errore accesso R2:", error);
-      checks.r2Access = false;
-    }
-
-    // 3. Se presignedUrl è fornito e valido, prova a scaricare e confrontare
-    if (qrPayload?.presignedUrl) {
-      try {
-        const response = await fetch(qrPayload.presignedUrl);
-        if (response.ok) {
-          const fileData = await response.arrayBuffer();
-          const uploadedHash = generateSHA256(Buffer.from(fileData));
-          checks.hashMatch = uploadedHash === targetHash;
-        }
-      } catch (error) {
-        console.error("Errore fetch presignedUrl:", error);
-      }
-    }
-
-    // 4. Confronta con chain
-    const chainVerification = await verifyOnChain(targetHash);
-    checks.onChain = chainVerification.exists;
-
-    // 5. Verifica firma digitale (se presente nel payload o nel certificato)
-    const signatureToVerify = qrPayload?.sig || certificate.signature;
+    // 3. Verifica firma digitale (se presente nel payload o nel certificato)
+    const signatureToVerify = qrPayload?.sig || certificate?.signature;
     if (signatureToVerify) {
       try {
         checks.signature = verifySignature(targetHash, signatureToVerify);
@@ -120,29 +77,23 @@ export async function verifyCertificate(req: Request, res: Response) {
       }
     }
 
-    // Risultato finale: verificato solo se tutti i check passano
-    const verified =
-      checks.dbExists &&
-      checks.r2Access &&
-      checks.hashMatch &&
-      checks.onChain &&
-      checks.signature;
+    // Risultato finale: verificato se l'hash esiste on-chain
+    // Gli altri check (DB, signature) sono informativi ma non bloccanti
+    const verified = chainResponse;
 
     return res.json({
       verified,
       hash: targetHash,
-      certificate: {
-        fileKey: certificate.fileKey,
-        txHash: certificate.txHash,
-        timestamp: certificate.timestamp,
-        docType: certificate.docType,
-      },
-      checks,
-      chainVerification: chainVerification.exists
+      chainResponse, // Risposta diretta dalla blockchain (true/false)
+      certificate: certificate
         ? {
-            storedHash: chainVerification.storedHash,
+            fileKey: certificate.fileKey,
+            txHash: certificate.txHash,
+            timestamp: certificate.timestamp,
+            docType: certificate.docType,
           }
         : null,
+      checks,
       qrPayload: qrPayload || null,
     });
   } catch (error) {

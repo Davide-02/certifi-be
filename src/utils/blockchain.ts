@@ -10,6 +10,7 @@ const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const CONTRACT_ABI = [
   "function getHash(address _owner) public view returns (bytes32)",
   "function storeHash(bytes32 _hash) public",
+  "function verify(bytes32 hash) external view returns (bool exists)",
 ];
 
 let provider: ethers.JsonRpcProvider | null = null;
@@ -130,6 +131,25 @@ export async function getHash(address?: string): Promise<string> {
   return storedHash;
 }
 
+/**
+ * Verifica se un hash esiste on-chain usando la funzione verify del contratto
+ */
+export async function verifyHashOnChain(hash: string): Promise<boolean> {
+  try {
+    const normalizedHash = normalizeBytes32(hash);
+    const contract = getReadContract();
+    const exists: boolean = await contract.verify(normalizedHash);
+    return exists;
+  } catch (error) {
+    console.error("Errore durante la verifica on-chain:", error);
+    return false;
+  }
+}
+
+/**
+ * @deprecated Usa verifyHashOnChain invece
+ * Mantenuto per compatibilità, ma ora usa verifyHashOnChain internamente
+ */
 export async function verifyOnChain(
   hash: string,
   address?: string
@@ -138,13 +158,9 @@ export async function verifyOnChain(
   storedHash?: string;
 }> {
   try {
-    const normalizedHash = normalizeBytes32(hash).toLowerCase();
-    const storedHash = (await getHash(address))?.toLowerCase();
-    const exists = storedHash === normalizedHash;
-
+    const exists = await verifyHashOnChain(hash);
     return {
       exists,
-      storedHash,
     };
   } catch (error) {
     console.error("Errore durante la verifica on-chain:", error);
