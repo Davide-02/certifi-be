@@ -7,6 +7,10 @@ const RPC_URL = process.env.RPC_URL;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 
+console.log("RPC URL:", process.env.RPC_URL);
+console.log("CONTRACT_ADDRESS:", process.env.CONTRACT_ADDRESS);
+console.log("PRIVATE_KEY:", process.env.PRIVATE_KEY);
+
 const CONTRACT_ABI = [
   "function getHash(address _owner) public view returns (bytes32)",
   "function storeHash(bytes32 _hash) public",

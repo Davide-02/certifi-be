@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import { getCertificateByHash } from "../utils/db";
 import { generateSHA256 } from "../utils/hash";
 import { verifyHashOnChain } from "../utils/blockchain";
 import { verifySignature } from "../utils/signature";
@@ -46,28 +45,16 @@ export async function verifyCertificate(req: Request, res: Response) {
       });
     }
 
-    // 1. Verifica hash sulla blockchain PRIMA di tutto
+    // 1. Verifica hash sulla blockchain
     const chainResponse = await verifyHashOnChain(targetHash);
 
-    // 2. Controlla se esiste nel DB
-    const certificate = await getCertificateByHash(targetHash);
-
-    const checks: {
-      dbExists: boolean;
-      r2Access: boolean | null;
-      hashMatch: boolean | null;
-      onChain: boolean;
-      signature: boolean;
-    } = {
-      dbExists: !!certificate,
-      r2Access: null, // Integrazione S3 disabilitata
-      hashMatch: null, // Integrazione S3 disabilitata
+    const checks = {
       onChain: chainResponse,
       signature: false,
     };
 
     // 3. Verifica firma digitale (se presente nel payload o nel certificato)
-    const signatureToVerify = qrPayload?.sig || certificate?.signature;
+    const signatureToVerify = qrPayload?.sig;
     if (signatureToVerify) {
       try {
         checks.signature = verifySignature(targetHash, signatureToVerify);
@@ -77,22 +64,16 @@ export async function verifyCertificate(req: Request, res: Response) {
       }
     }
 
-    // Risultato finale: verificato se l'hash esiste on-chain
-    // Gli altri check (DB, signature) sono informativi ma non bloccanti
-    const verified = chainResponse;
+    // Risultato finale: verificato se hash esiste on-chain e, se presente,
+    // la firma è valida
+    const signatureRequired = Boolean(signatureToVerify);
+    const verified = chainResponse && (!signatureRequired || checks.signature);
 
     return res.json({
       verified,
       hash: targetHash,
       chainResponse, // Risposta diretta dalla blockchain (true/false)
-      certificate: certificate
-        ? {
-            fileKey: certificate.fileKey,
-            txHash: certificate.txHash,
-            timestamp: certificate.timestamp,
-            docType: certificate.docType,
-          }
-        : null,
+      certificate: null,
       checks,
       qrPayload: qrPayload || null,
     });
@@ -137,36 +118,22 @@ export async function verifyByFile(req: Request, res: Response) {
       });
     }
 
-    // Cerca certificato nel DB
-    const certificate = await getCertificateByHash(targetHash);
-
-    if (!certificate) {
-      return res.json({
-        verified: false,
-        error: "Certificato non trovato",
-        hash: targetHash,
-        match: false,
-      });
-    }
-
-    // Se file fornito, confronta hash
-    let match = false;
+    let fileMatch: boolean | null = null;
     if (file) {
       const buffer = file.buffer;
       const uploadedHash = generateSHA256(buffer);
-      match = uploadedHash === targetHash;
+      fileMatch = uploadedHash === targetHash;
+      targetHash = uploadedHash;
     }
 
+    const chainResponse = await verifyHashOnChain(targetHash);
+    const verified = chainResponse && fileMatch !== false;
+
     return res.json({
-      verified: match,
+      verified,
       hash: targetHash,
-      match,
-      certificate: {
-        fileKey: certificate.fileKey,
-        txHash: certificate.txHash,
-        timestamp: certificate.timestamp,
-        docType: certificate.docType,
-      },
+      chainResponse,
+      fileMatch,
     });
   } catch (error) {
     console.error("Errore durante la verifica POST:", error);
