@@ -7,10 +7,6 @@ const RPC_URL = process.env.RPC_URL;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 
-console.log("RPC URL:", process.env.RPC_URL);
-console.log("CONTRACT_ADDRESS:", process.env.CONTRACT_ADDRESS);
-console.log("PRIVATE_KEY:", process.env.PRIVATE_KEY);
-
 const CONTRACT_ABI = [
   "function getHash(address _owner) public view returns (bytes32)",
   "function storeHash(bytes32 _hash) public",
@@ -21,6 +17,13 @@ let provider: ethers.JsonRpcProvider | null = null;
 let readContract: ethers.Contract | null = null;
 let writeContract: ethers.Contract | null = null;
 let signerWallet: ethers.Wallet | null = null;
+
+function logChain(
+  event: string,
+  payload: Record<string, string | number | boolean | null | undefined>
+): void {
+  console.log(`[CertiFi][chain] ${event}`, payload);
+}
 
 function ensureEnv(value: string | undefined, name: string): string {
   if (!value) {
@@ -110,21 +113,38 @@ export async function storeHash(hash: string): Promise<string> {
   const wallet = getSignerWallet();
   const contract = getWriteContract();
 
-  // Popola la transazione senza inviarla
   const populatedTx = await contract.storeHash.populateTransaction(
     normalizedHash
   );
-
-  // Ottieni nonce fresco (bypass cache ethers)
   const nonce = await getFreshNonce(wallet.address);
 
-  // Invia transazione con nonce manuale
+  logChain("storeHash:prepared", {
+    hash: normalizedHash,
+    nonce,
+    to: populatedTx.to,
+    gasLimit: populatedTx.gasLimit?.toString(),
+  });
+
   const tx = await wallet.sendTransaction({
     ...populatedTx,
     nonce,
   });
 
+  logChain("storeHash:submitted", {
+    hash: normalizedHash,
+    txHash: tx.hash,
+    nonce,
+  });
+
   const receipt = await tx.wait();
+
+  logChain("storeHash:confirmed", {
+    hash: normalizedHash,
+    txHash: receipt?.hash ?? tx.hash,
+    status: receipt?.status ?? null,
+    blockNumber: receipt?.blockNumber ?? null,
+  });
+
   return receipt?.hash ?? tx.hash;
 }
 
@@ -143,9 +163,18 @@ export async function verifyHashOnChain(hash: string): Promise<boolean> {
     const normalizedHash = normalizeBytes32(hash);
     const contract = getReadContract();
     const exists: boolean = await contract.verify(normalizedHash);
+    logChain("verifyHashOnChain:response", {
+      hash: normalizedHash,
+      exists,
+    });
     return exists;
   } catch (error) {
     console.error("Errore durante la verifica on-chain:", error);
+    logChain("verifyHashOnChain:error", {
+      message:
+        (error as { message?: string })?.message ||
+        "Errore sconosciuto durante verify",
+    });
     return false;
   }
 }

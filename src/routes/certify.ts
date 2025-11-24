@@ -9,6 +9,34 @@ const CHAIN_ID = process.env.CHAIN_ID || "84532"; // Base Sepolia testnet
 const CONTRACT_ADDRESS =
   process.env.CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000";
 
+function formatBlockchainError(error: unknown) {
+  if (typeof error === "object" && error !== null) {
+    const anyError = error as {
+      code?: string;
+      shortMessage?: string;
+      message?: string;
+      info?: unknown;
+    };
+    return {
+      code: anyError.code,
+      shortMessage: anyError.shortMessage,
+      message: anyError.message || "Errore sconosciuto durante la transazione",
+      info: anyError.info,
+    };
+  }
+
+  return {
+    message: "Errore sconosciuto durante la transazione",
+  };
+}
+
+function auditLog(
+  event: string,
+  payload: Record<string, string | number | boolean | null>
+) {
+  console.log(`[CertiFi][audit] ${event}`, payload);
+}
+
 /**
  * POST /certify
  * Certifica un file: upload, hash, firma, on-chain
@@ -31,6 +59,10 @@ export async function certifyFile(req: Request, res: Response) {
     // 3. Controlla se l'hash esiste già on-chain
     const alreadyCertified = await verifyHashOnChain(hash);
     if (alreadyCertified) {
+      auditLog("duplicate-certification-attempt", {
+        hash,
+        timestamp: Date.now(),
+      });
       return res.status(409).json({
         success: false,
         error: "File già certificato",
@@ -39,7 +71,23 @@ export async function certifyFile(req: Request, res: Response) {
     }
 
     // 4. Scrivi hash su Base chain
-    const txHash = await storeHash(hash);
+    let txHash: string;
+    try {
+      txHash = await storeHash(hash);
+    } catch (error) {
+      const formattedError = formatBlockchainError(error);
+      console.error("Errore durante la scrittura on-chain:", error);
+      auditLog("certification-failed", {
+        hash,
+        timestamp: Date.now(),
+        reason: formattedError.shortMessage || formattedError.message,
+      });
+      return res.status(502).json({
+        success: false,
+        error: "Scrittura on-chain fallita",
+        details: formattedError,
+      });
+    }
 
     // 5. Firma digitale dell'hash (server-side)
     const signature = signHash(hash);
@@ -63,6 +111,12 @@ export async function certifyFile(req: Request, res: Response) {
     };
 
     // 9. Ritorna risultato (senza storage persistente)
+    auditLog("certification-success", {
+      hash,
+      txHash,
+      timestamp,
+    });
+
     return res.json({
       success: true,
       hash,
