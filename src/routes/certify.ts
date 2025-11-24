@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { generateSHA256 } from "../utils/hash";
-import { storeHash } from "../utils/blockchain";
+import { storeHash, verifyHashOnChain } from "../utils/blockchain";
 import { signHash } from "../utils/signature";
 
 // Configurazione certificatore
@@ -28,20 +28,30 @@ export async function certifyFile(req: Request, res: Response) {
     // 2. Genera hash SHA-256
     const hash = generateSHA256(buffer);
 
-    // 3. Scrivi hash su Base chain
+    // 3. Controlla se l'hash esiste già on-chain
+    const alreadyCertified = await verifyHashOnChain(hash);
+    if (alreadyCertified) {
+      return res.status(409).json({
+        success: false,
+        error: "File già certificato",
+        hash,
+      });
+    }
+
+    // 4. Scrivi hash su Base chain
     const txHash = await storeHash(hash);
 
-    // 4. Firma digitale dell'hash (server-side)
+    // 5. Firma digitale dell'hash (server-side)
     const signature = signHash(hash);
 
-    // 5. Timestamp della certificazione
+    // 6. Timestamp della certificazione
     const timestamp = Date.now();
 
-    // 6. Tipo documento (estratto dall'estensione)
+    // 7. Tipo documento (estratto dall'estensione)
     const docType =
       file.originalname.split(".").pop()?.toUpperCase() || "UNKNOWN";
 
-    // 7. Crea payload completo per QR code
+    // 8. Crea payload completo per QR code
     const qrPayload = {
       iss: ISSUER,
       hash,
@@ -52,7 +62,7 @@ export async function certifyFile(req: Request, res: Response) {
       sig: signature,
     };
 
-    // 8. Ritorna risultato (senza storage persistente)
+    // 9. Ritorna risultato (senza storage persistente)
     return res.json({
       success: true,
       hash,
