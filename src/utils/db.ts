@@ -1,9 +1,29 @@
 import { promises as fs } from "fs";
 import path from "path";
+import mongoose from "mongoose";
 
 // Path del file DB (JSON semplice per MVP)
 // In produzione, sostituire con database reale (PostgreSQL, MongoDB, etc.)
 const DB_PATH = path.join(process.cwd(), "data", "certificates.json");
+
+/**
+ * Connette a MongoDB usando MONGODB_URI dal file .env
+ */
+export async function connectMongoDB(): Promise<void> {
+  const mongoUri = process.env.MONGODB_URI;
+
+  if (!mongoUri) {
+    throw new Error("MONGODB_URI non trovato nel file .env");
+  }
+
+  try {
+    await mongoose.connect(mongoUri);
+    console.log("✅ Connesso a MongoDB");
+  } catch (error) {
+    console.error("❌ Errore connessione MongoDB:", error);
+    throw error;
+  }
+}
 
 interface CertificateRecord {
   hash: string;
