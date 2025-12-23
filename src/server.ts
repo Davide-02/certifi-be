@@ -5,6 +5,14 @@ import cors from "cors";
 import { certifyFile } from "./routes/certify";
 import { verifyCertificate, verifyByFile } from "./routes/verify";
 import { login, register } from "./routes/auth";
+import {
+  createUser,
+  getUserById,
+  getUsers,
+  updateUser,
+  patchUser,
+  deleteUser,
+} from "./routes/users";
 import { connectMongoDB } from "./utils/db";
 
 const app = express();
@@ -48,9 +56,19 @@ const upload = multer({
   },
 });
 
-// Routes
+// Routes - Auth
 app.post("/auth/register", register);
 app.post("/auth/login", login);
+
+// Routes - Users
+app.post("/users", createUser);
+app.get("/users", getUsers);
+app.get("/users/:id", getUserById);
+app.put("/users/:id", updateUser);
+app.patch("/users/:id", patchUser);
+app.delete("/users/:id", deleteUser);
+
+// Routes - Certify & Verify
 app.post("/certify", upload.single("file"), certifyFile);
 app.get("/verify", verifyCertificate);
 app.post("/verify", upload.single("file"), verifyByFile);
@@ -63,7 +81,7 @@ app.get("/health", (req, res) => {
 // Avvia server e connetti a MongoDB
 async function startServer() {
   let mongoConnected = false;
-  
+
   try {
     // Connetti a MongoDB
     await connectMongoDB();
@@ -72,13 +90,17 @@ async function startServer() {
     console.error("❌ Errore connessione MongoDB:", error);
     console.log("⚠️  Avvio server senza MongoDB (solo per test)");
   }
-  
+
   // Avvia il server in ogni caso
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 API Server running on http://localhost:${PORT}`);
-    console.log(`📡 CORS configurato per accettare richieste da qualsiasi origine`);
+    console.log(
+      `📡 CORS configurato per accettare richieste da qualsiasi origine`
+    );
     if (!mongoConnected) {
-      console.log(`⚠️  MongoDB non connesso - alcune funzionalità potrebbero non funzionare`);
+      console.log(
+        `⚠️  MongoDB non connesso - alcune funzionalità potrebbero non funzionare`
+      );
     }
   });
 }

@@ -90,7 +90,7 @@ export async function register(req: Request, res: Response) {
       success: true,
       message: "Utente registrato con successo",
       user: {
-        id: newUser._id,
+        id: newUser.id,
         email: newUser.email,
         username: newUser.username,
         name: newUser.name,
@@ -103,7 +103,7 @@ export async function register(req: Request, res: Response) {
     });
   } catch (error) {
     console.error("Errore durante la registrazione:", error);
-    
+
     // Gestione errori di duplicato MongoDB
     if (error instanceof Error && error.message.includes("E11000")) {
       return res.status(409).json({
@@ -121,22 +121,35 @@ export async function register(req: Request, res: Response) {
 
 /**
  * POST /auth/login
- * Autentica un utente con email e password
+ * Autentica un utente con email/username e password
  */
 export async function login(req: Request, res: Response) {
   try {
-    const { email, password } = req.body;
+    const { email, username, password } = req.body;
 
     // Validazione input
-    if (!email || !password) {
+    if (!password) {
       return res.status(400).json({
         success: false,
-        error: "Email e password sono richiesti",
+        error: "Password è richiesta",
       });
     }
 
-    // Cerca l'utente per email
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    // Deve essere fornito almeno email o username
+    if (!email && !username) {
+      return res.status(400).json({
+        success: false,
+        error: "Email o username è richiesto",
+      });
+    }
+
+    // Cerca l'utente per email o username
+    let user;
+    if (email) {
+      user = await User.findOne({ email: email.toLowerCase().trim() });
+    } else {
+      user = await User.findOne({ username: username.trim() });
+    }
 
     if (!user) {
       return res.status(401).json({
@@ -171,7 +184,7 @@ export async function login(req: Request, res: Response) {
     return res.json({
       success: true,
       user: {
-        id: user._id,
+        id: user.id,
         email: user.email,
         username: user.username,
         name: user.name,
@@ -190,4 +203,3 @@ export async function login(req: Request, res: Response) {
     });
   }
 }
-
