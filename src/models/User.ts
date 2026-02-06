@@ -7,7 +7,7 @@ export interface IUser extends Document {
   passwordHash: string;
   name: string;
   surname: string;
-  role: "admin" | "issuer" | "holder" | "verifier";
+  role: "admin" | "issuer" | "verifier";
   status: "active" | "inactive" | "suspended";
   isActive: boolean;
   createdAt: Date;
@@ -55,7 +55,7 @@ const UserSchema = new Schema<IUser>(
     },
     role: {
       type: String,
-      enum: ["admin", "issuer", "holder", "verifier"],
+      enum: ["admin", "issuer", "verifier"],
       required: true,
       default: "verifier",
     },

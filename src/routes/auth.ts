@@ -38,7 +38,7 @@ export async function register(req: Request, res: Response) {
     }
 
     // Validazione ruolo
-    const allowedRoles = ["admin", "issuer", "holder", "verifier"];
+    const allowedRoles = ["admin", "issuer", "verifier"];
     if (role && !allowedRoles.includes(role)) {
       return res.status(400).json({
         success: false,

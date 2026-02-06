@@ -39,7 +39,7 @@ export async function createUser(req: Request, res: Response) {
     }
 
     // Validazione ruolo
-    const allowedRoles = ["admin", "issuer", "holder", "verifier"];
+    const allowedRoles = ["admin", "issuer", "verifier"];
     if (role && !allowedRoles.includes(role)) {
       return res.status(400).json({
         success: false,
@@ -302,7 +302,7 @@ export async function updateUser(req: Request, res: Response) {
 
     // Validazione ruolo
     if (role) {
-      const allowedRoles = ["admin", "issuer", "holder", "verifier"];
+      const allowedRoles = ["admin", "issuer", "verifier"];
       if (!allowedRoles.includes(role)) {
         return res.status(400).json({
           success: false,
@@ -450,7 +450,7 @@ export async function patchUser(req: Request, res: Response) {
 
     // Validazione ruolo
     if (updateData.role) {
-      const allowedRoles = ["admin", "issuer", "holder", "verifier"];
+      const allowedRoles = ["admin", "issuer", "verifier"];
       if (!allowedRoles.includes(updateData.role)) {
         return res.status(400).json({
           success: false,
