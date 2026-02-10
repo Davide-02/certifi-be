@@ -87,14 +87,10 @@ export class AnalysisController {
         error instanceof Error ? error.message : "Unknown error";
 
       await AuditService.log({
-        eventType: "document.analysis.error",
-        companyId: req.companyId || null,
-        userId: (req as any).userId || null,
-        metadata: {
-          error: errorMessage,
-        },
-        ipAddress: req.ip,
-        userAgent: req.get("user-agent"),
+        action: "failed",
+        documentId: undefined,
+        user_id: null, // TODO: Get user ObjectId from request
+        notes: `Document analysis error: ${errorMessage}`,
       });
 
       res.status(500).json({

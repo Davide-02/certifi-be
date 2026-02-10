@@ -3,12 +3,25 @@ import { AIService } from "./AIService";
 import { DocumentService, IDocument } from "./DocumentService";
 import { AuditService } from "./AuditService";
 import { AIAnalysisResponse } from "../dto/ai.dto";
+import { User } from "../models/User";
+import { Types } from "mongoose";
 
 /**
  * Service for document analysis (without certification)
  * Analyzes document with AI but does NOT send to blockchain
  */
 export class AnalysisService {
+  /**
+   * Get User MongoDB ObjectId from numeric ID
+   */
+  private static async getUserObjectId(userId: number): Promise<Types.ObjectId | null> {
+    try {
+      const user = await User.findOne({ id: userId }).exec();
+      return user ? user._id : null;
+    } catch {
+      return null;
+    }
+  }
   /**
    * Analyze document flow:
    * 1. Store document
@@ -37,15 +50,10 @@ export class AnalysisService {
     );
 
     await AuditService.log({
-      eventType: "document.uploaded",
-      companyId,
+      action: "uploaded",
       documentId: document.id,
-      userId,
-      metadata: {
-        fileName,
-        fileSize: fileBuffer.length,
-        hash: document.fileHash,
-      },
+      user_id: userId ? await this.getUserObjectId(userId) : null,
+      notes: `File uploaded: ${fileName} (${fileBuffer.length} bytes), hash: ${document.fileHash}`,
     });
 
     // 2. Update status to analyzing
@@ -108,15 +116,10 @@ export class AnalysisService {
       await DocumentService.updateStatus(document.id, "analyzed");
 
       await AuditService.log({
-        eventType: "ai.analysis.completed",
-        companyId,
+        action: "analyzed",
         documentId: document.id,
-        userId,
-        metadata: {
-          documentFamily: aiAnalysisResponse.document_family,
-          subtype: aiAnalysisResponse.subtype,
-          confidence: aiAnalysisResponse.confidence,
-        },
+        user_id: userId ? await this.getUserObjectId(userId) : null,
+        notes: `AI analysis completed: ${aiAnalysisResponse.document_family}/${subtype}, confidence: ${confidence}`,
       });
 
       return {
@@ -126,13 +129,10 @@ export class AnalysisService {
     } catch (error) {
       await DocumentService.updateStatus(document.id, "failed");
       await AuditService.log({
-        eventType: "ai.analysis.failed",
-        companyId,
+        action: "failed",
         documentId: document.id,
-        userId,
-        metadata: {
-          error: error instanceof Error ? error.message : String(error),
-        },
+        user_id: userId ? await this.getUserObjectId(userId) : null,
+        notes: `AI analysis failed: ${error instanceof Error ? error.message : String(error)}`,
       });
       throw error;
     }

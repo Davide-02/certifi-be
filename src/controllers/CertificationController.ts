@@ -61,15 +61,10 @@ export class CertificationController {
         error instanceof Error ? error.message : "Unknown error";
 
       await AuditService.log({
-        eventType: "certification.error",
-        companyId: req.companyId || null,
-        userId: (req as any).userId || null,
-        metadata: {
-          error: errorMessage,
-          document_id: req.body.document_id,
-        },
-        ipAddress: req.ip,
-        userAgent: req.get("user-agent"),
+        action: "failed",
+        documentId: req.body.document_id,
+        user_id: null, // TODO: Get user ObjectId from request
+        notes: `Certification error: ${errorMessage}`,
       });
 
       const statusCode =

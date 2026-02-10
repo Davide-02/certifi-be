@@ -10,6 +10,10 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
+// Legacy endpoint (deprecated)
 router.post("/upload", tenantMiddleware, upload.single("file"), DocumentController.upload);
+
+// Update document status
+router.patch("/:id/status", tenantMiddleware, DocumentController.updateStatus);
 
 export default router;

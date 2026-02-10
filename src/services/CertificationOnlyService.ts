@@ -4,12 +4,25 @@ import { AIAnalysis } from "../models/AIAnalysis";
 import { BlockchainService } from "./BlockchainService";
 import { DocumentService, IDocument } from "./DocumentService";
 import { AuditService } from "./AuditService";
+import { User } from "../models/User";
+import { Types } from "mongoose";
 
 /**
  * Service for certification only (document must be already analyzed)
  * Certifies an already-analyzed document on blockchain
  */
 export class CertificationOnlyService {
+  /**
+   * Get User MongoDB ObjectId from numeric ID
+   */
+  private static async getUserObjectId(userId: number): Promise<Types.ObjectId | null> {
+    try {
+      const user = await User.findOne({ id: userId }).exec();
+      return user ? user._id : null;
+    } catch {
+      return null;
+    }
+  }
   /**
    * Certify an already-analyzed document:
    * 1. Load document and AI analysis
@@ -61,15 +74,10 @@ export class CertificationOnlyService {
     if (!decision.certifiable) {
       await DocumentService.updateStatus(document.id, "rejected");
       await AuditService.log({
-        eventType: "certification.rejected",
-        companyId,
+        action: "rejected",
         documentId: document.id,
-        userId,
-        metadata: {
-          reason: decision.reason,
-          documentFamily: aiAnalysis.documentFamily,
-          confidence: aiAnalysis.confidence,
-        },
+        user_id: await this.getUserObjectId(userId),
+        notes: `Certification rejected: ${decision.reason} (family: ${aiAnalysis.documentFamily}, confidence: ${aiAnalysis.confidence})`,
       });
 
       throw new Error(decision.reason || "Document does not meet certification policy");
@@ -106,15 +114,10 @@ export class CertificationOnlyService {
       await DocumentService.updateStatus(document.id, "certified");
 
       await AuditService.log({
-        eventType: "certification.created",
-        companyId,
+        action: "verified",
         documentId: document.id,
-        userId,
-        metadata: {
-          txHash: blockchainResponse.tx_hash,
-          documentFamily: aiAnalysis.documentFamily,
-          confidence: aiAnalysis.confidence,
-        },
+        user_id: await this.getUserObjectId(userId),
+        notes: `Document certified on blockchain. TX: ${blockchainResponse.tx_hash}, family: ${aiAnalysis.documentFamily}, confidence: ${aiAnalysis.confidence}`,
       });
 
       return {
@@ -124,13 +127,10 @@ export class CertificationOnlyService {
     } catch (error) {
       await DocumentService.updateStatus(document.id, "failed");
       await AuditService.log({
-        eventType: "certification.failed",
-        companyId,
+        action: "failed",
         documentId: document.id,
-        userId,
-        metadata: {
-          error: error instanceof Error ? error.message : String(error),
-        },
+        user_id: await this.getUserObjectId(userId),
+        notes: `Certification failed: ${error instanceof Error ? error.message : String(error)}`,
       });
       throw error;
     }

@@ -109,4 +109,16 @@ export class DocumentService {
   static async updateStatus(documentId: string, status: IDocument["status"]): Promise<IDocument | null> {
     return DocumentModel.findOneAndUpdate({ id: documentId }, { status }, { new: true }).exec();
   }
+
+  static async updateStatusWithCompanyCheck(
+    documentId: string,
+    companyId: number,
+    status: IDocument["status"]
+  ): Promise<IDocument | null> {
+    return DocumentModel.findOneAndUpdate(
+      { id: documentId, companyId },
+      { status },
+      { new: true }
+    ).exec();
+  }
 }
