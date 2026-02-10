@@ -1,9 +1,6 @@
 import "dotenv/config";
 import express from "express";
-import multer from "multer";
 import cors from "cors";
-import { certifyFile } from "./routes/certify";
-import { verifyCertificate, verifyByFile } from "./routes/verify";
 import { login, register } from "./routes/auth";
 import {
   createUser,
@@ -13,6 +10,10 @@ import {
   patchUser,
   deleteUser,
 } from "./routes/users";
+import analyzeRouter from "./routes/analyze";
+import certifyRouter from "./routes/certify";
+import verificationRouter from "./routes/verification";
+import documentsRouter from "./routes/documents";
 import { connectMongoDB } from "./utils/db";
 
 const app = express();
@@ -34,6 +35,8 @@ const corsOptions = {
     "Origin",
     "Access-Control-Request-Method",
     "Access-Control-Request-Headers",
+    "X-Company-Id",
+    "X-Company-Slug",
   ],
   exposedHeaders: ["Content-Length", "Content-Type"],
   maxAge: 86400, // 24 ore
@@ -48,14 +51,6 @@ app.options("*", cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Configurazione multer per upload file
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB max
-  },
-});
-
 // Routes - Auth
 app.post("/auth/register", register);
 app.post("/auth/login", login);
@@ -68,10 +63,17 @@ app.put("/users/:id", updateUser);
 app.patch("/users/:id", patchUser);
 app.delete("/users/:id", deleteUser);
 
-// Routes - Certify & Verify
-app.post("/certify", upload.single("file"), certifyFile);
-app.get("/verify", verifyCertificate);
-app.post("/verify", upload.single("file"), verifyByFile);
+// Routes - Analysis (analyze document with AI, NO blockchain)
+app.use("/analyze", analyzeRouter);
+
+// Routes - Certification (certify already-analyzed document on blockchain)
+app.use("/certify", certifyRouter);
+
+// Routes - Documents (legacy - full flow, kept for backward compatibility)
+app.use("/documents", documentsRouter);
+
+// Routes - Verification (public endpoint)
+app.use("/verify", verificationRouter);
 
 // Health check
 app.get("/health", (req, res) => {
