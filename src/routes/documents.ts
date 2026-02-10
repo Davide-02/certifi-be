@@ -13,6 +13,9 @@ const upload = multer({
 // Legacy endpoint (deprecated)
 router.post("/upload", tenantMiddleware, upload.single("file"), DocumentController.upload);
 
+// Get my certifications (as issuer)
+router.get("/my-certifications", tenantMiddleware, DocumentController.getMyCertifications);
+
 // Update document status
 router.patch("/:id/status", tenantMiddleware, DocumentController.updateStatus);
 

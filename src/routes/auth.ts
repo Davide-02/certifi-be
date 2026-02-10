@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import { User } from "../models/User";
+import { generateToken } from "../middleware/auth";
 
 const saltRounds = 12;
 
@@ -85,10 +86,24 @@ export async function register(req: Request, res: Response) {
 
     await newUser.save();
 
-    // Ritorna i dati dell'utente (senza passwordHash)
+    // Estrai companyId dall'header se presente (opzionale)
+    const companyIdHeader = req.headers["x-company-id"];
+    const companyId = companyIdHeader
+      ? parseInt(companyIdHeader as string, 10)
+      : undefined;
+
+    // Genera JWT token con userId, role e companyId (opzionale)
+    const token = generateToken(
+      newUser.id.toString(),
+      newUser.role,
+      companyId
+    );
+
+    // Ritorna i dati dell'utente e il token JWT
     return res.status(201).json({
       success: true,
       message: "Utente registrato con successo",
+      token, // JWT token nella risposta
       user: {
         id: newUser.id,
         email: newUser.email,
@@ -180,9 +195,19 @@ export async function login(req: Request, res: Response) {
     user.lastLoginAt = new Date();
     await user.save();
 
-    // Ritorna i dati dell'utente (senza passwordHash)
+    // Estrai companyId dall'header se presente (opzionale)
+    const companyIdHeader = req.headers["x-company-id"];
+    const companyId = companyIdHeader
+      ? parseInt(companyIdHeader as string, 10)
+      : undefined;
+
+    // Genera JWT token con userId, role e companyId (opzionale)
+    const token = generateToken(user.id.toString(), user.role, companyId);
+
+    // Ritorna i dati dell'utente e il token JWT
     return res.json({
       success: true,
+      token, // JWT token nella risposta
       user: {
         id: user.id,
         email: user.email,
