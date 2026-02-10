@@ -86,18 +86,12 @@ export async function register(req: Request, res: Response) {
 
     await newUser.save();
 
-    // Estrai companyId dall'header se presente (opzionale)
-    const companyIdHeader = req.headers["x-company-id"];
-    const companyId = companyIdHeader
-      ? parseInt(companyIdHeader as string, 10)
-      : undefined;
-
-    // Genera JWT token con userId, role e companyId (opzionale)
-    const token = generateToken(
-      newUser.id.toString(),
-      newUser.role,
-      companyId
-    );
+    // Genera JWT token con userId, role e email
+    const token = generateToken({
+      userId: newUser.id,
+      role: newUser.role,
+      email: newUser.email,
+    });
 
     // Ritorna i dati dell'utente e il token JWT
     return res.status(201).json({
@@ -195,14 +189,12 @@ export async function login(req: Request, res: Response) {
     user.lastLoginAt = new Date();
     await user.save();
 
-    // Estrai companyId dall'header se presente (opzionale)
-    const companyIdHeader = req.headers["x-company-id"];
-    const companyId = companyIdHeader
-      ? parseInt(companyIdHeader as string, 10)
-      : undefined;
-
-    // Genera JWT token con userId, role e companyId (opzionale)
-    const token = generateToken(user.id.toString(), user.role, companyId);
+    // Genera JWT token con userId, role e email
+    const token = generateToken({
+      userId: user.id,
+      role: user.role,
+      email: user.email,
+    });
 
     // Ritorna i dati dell'utente e il token JWT
     return res.json({

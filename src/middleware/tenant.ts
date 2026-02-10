@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
+import { AuthRequest } from "./auth";
 
-export interface TenantRequest extends Request {
+export interface TenantRequest extends AuthRequest {
   companyId?: number;
 }
 

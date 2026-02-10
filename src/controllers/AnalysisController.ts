@@ -31,8 +31,15 @@ export class AnalysisController {
         return;
       }
 
-      // Extract user ID from request (in production, from JWT)
-      const userId = (req as any).userId || 1; // TODO: Extract from auth middleware
+      // Extract user ID from request (set by authMiddleware)
+      const userId = req.userId;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: "Authentication required",
+        } as ErrorResponse);
+        return;
+      }
 
       const documentId =
         (req.body.document_id as string) || `doc_${uuidv4()}`;
@@ -86,10 +93,22 @@ export class AnalysisController {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
+      // Try to get user ObjectId if userId is available
+      let userObjectId = null;
+      if (req.userId) {
+        try {
+          const { User } = await import("../models/User");
+          const user = await User.findOne({ id: req.userId }).exec();
+          userObjectId = user ? user._id : null;
+        } catch {
+          // Ignore error
+        }
+      }
+
       await AuditService.log({
         action: "failed",
         documentId: undefined,
-        user_id: null, // TODO: Get user ObjectId from request
+        user_id: userObjectId,
         notes: `Document analysis error: ${errorMessage}`,
       });
 

@@ -32,8 +32,15 @@ export class CertificationController {
         return;
       }
 
-      // Extract user ID from request (in production, from JWT)
-      const userId = (req as any).userId || 1; // TODO: Extract from auth middleware
+      // Extract user ID from request (set by authMiddleware)
+      const userId = req.userId;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: "Authentication required",
+        } as ErrorResponse);
+        return;
+      }
 
       // Certify document (must be already analyzed)
       const result = await CertificationOnlyService.certifyDocument(
@@ -60,10 +67,22 @@ export class CertificationController {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
+      // Try to get user ObjectId if userId is available
+      let userObjectId = null;
+      if (req.userId) {
+        try {
+          const { User } = await import("../models/User");
+          const user = await User.findOne({ id: req.userId }).exec();
+          userObjectId = user ? user._id : null;
+        } catch {
+          // Ignore error
+        }
+      }
+
       await AuditService.log({
         action: "failed",
         documentId: req.body.document_id,
-        user_id: null, // TODO: Get user ObjectId from request
+        user_id: userObjectId,
         notes: `Certification error: ${errorMessage}`,
       });
 

@@ -74,8 +74,8 @@ export class DocumentController {
         return;
       }
 
-      // Extract user ID from request (in production, from JWT)
-      const userId = (req as any).userId; // TODO: Extract from auth middleware
+      // Extract user ID from request (set by authMiddleware)
+      const userId = req.userId;
 
       if (!userId) {
         res.status(401).json({
@@ -201,8 +201,8 @@ export class DocumentController {
         return;
       }
 
-      // Extract user ID from request (in production, from JWT)
-      const userId = (req as any).userId; // TODO: Extract from auth middleware
+      // Extract user ID from request (set by authMiddleware)
+      const userId = req.userId;
 
       if (!userId) {
         res.status(401).json({

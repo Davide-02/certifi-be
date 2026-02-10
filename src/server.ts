@@ -15,6 +15,7 @@ import certifyRouter from "./routes/certify";
 import verificationRouter from "./routes/verification";
 import documentsRouter from "./routes/documents";
 import { connectMongoDB } from "./utils/db";
+import { authMiddleware } from "./middleware/auth";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -51,11 +52,24 @@ app.options("*", cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Routes - Auth
+// Routes - Auth (pubbliche, non richiedono autenticazione)
+// Solo login e register sono pubbliche per permettere l'autenticazione iniziale
 app.post("/auth/register", register);
 app.post("/auth/login", login);
 
-// Routes - Users
+// Health check (pubblico - utile per monitoring)
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+// Tutte le route seguenti richiedono autenticazione JWT
+// Middleware di autenticazione applicato a tutte le route protette
+app.use(authMiddleware);
+
+// Routes - Verification (protetta - richiede autenticazione)
+app.use("/verify", verificationRouter);
+
+// Routes - Users (protette)
 app.post("/users", createUser);
 app.get("/users", getUsers);
 app.get("/users/:id", getUserById);
@@ -63,22 +77,14 @@ app.put("/users/:id", updateUser);
 app.patch("/users/:id", patchUser);
 app.delete("/users/:id", deleteUser);
 
-// Routes - Analysis (analyze document with AI, NO blockchain)
+// Routes - Analysis (analyze document with AI, NO blockchain) (protetta)
 app.use("/analyze", analyzeRouter);
 
-// Routes - Certification (certify already-analyzed document on blockchain)
+// Routes - Certification (certify already-analyzed document on blockchain) (protetta)
 app.use("/certify", certifyRouter);
 
-// Routes - Documents (legacy - full flow, kept for backward compatibility)
+// Routes - Documents (legacy - full flow, kept for backward compatibility) (protetta)
 app.use("/documents", documentsRouter);
-
-// Routes - Verification (public endpoint)
-app.use("/verify", verificationRouter);
-
-// Health check
-app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
-});
 
 // Avvia server e connetti a MongoDB
 async function startServer() {
