@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import cors from "cors";
 import { login, register } from "./routes/auth";
 import {
   createUser,
@@ -13,30 +14,25 @@ import analyzeRouter from "./routes/analyze";
 import certifyRouter from "./routes/certify";
 import verificationRouter from "./routes/verification";
 import documentsRouter from "./routes/documents";
+import auditRouter from "./routes/audit";
 import { connectMongoDB } from "./utils/db";
 import { authMiddleware } from "./middleware/auth";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 
-// CORS: unico middleware che gestisce tutto (preflight + header su ogni risposta)
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-  } else {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-  }
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "*");
-  res.setHeader("Access-Control-Max-Age", "86400");
-  if (req.method === "OPTIONS") {
-    res.sendStatus(204);
-    return;
-  }
-  next();
-});
+// CORS: primo middleware, gestisce preflight e header per tutte le route
+const corsOptions: cors.CorsOptions = {
+  origin: true,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
+  exposedHeaders: ["Content-Length", "Content-Type"],
+  maxAge: 86400,
+  preflightContinue: false,
+};
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 // Middleware
 app.use(express.json());
@@ -74,6 +70,9 @@ app.use("/certify", certifyRouter);
 
 // Routes - Documents (legacy - full flow, kept for backward compatibility) (protetta)
 app.use("/documents", documentsRouter);
+
+// Routes - Audit Logs (protetta - admin only)
+app.use("/audit-logs", auditRouter);
 
 // Avvia server e connetti a MongoDB
 async function startServer() {
