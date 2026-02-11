@@ -2,16 +2,24 @@ import mongoose, { Schema, Document, Types } from "mongoose";
 
 export interface IAuditLog extends Document {
   documentId: string | null;
+  claimId?: Types.ObjectId | null; // Reference to Claim if action involves a claim
   user_id: Types.ObjectId | null;
-  action: "viewed" | "verified" | "updated" | string; // Allow other actions too
+  action: "viewed" | "verified" | "updated" | "uploaded" | "analyzed" | "certified" | "rejected" | "failed" | "claim_created" | "claim_updated" | "claim_revoked" | string;
   timestamp: Date;
   notes?: string;
+  result?: "success" | "failure" | "pending"; // Result of the action
 }
 
 const AuditLogSchema = new Schema<IAuditLog>(
   {
     documentId: {
       type: String,
+      index: true,
+      default: null,
+    },
+    claimId: {
+      type: Schema.Types.ObjectId,
+      ref: "Claim",
       index: true,
       default: null,
     },
@@ -34,6 +42,9 @@ const AuditLogSchema = new Schema<IAuditLog>(
         "certified",
         "rejected",
         "failed",
+        "claim_created",
+        "claim_updated",
+        "claim_revoked",
       ],
     },
     timestamp: {
@@ -45,6 +56,11 @@ const AuditLogSchema = new Schema<IAuditLog>(
       type: String,
       default: "",
     },
+    result: {
+      type: String,
+      enum: ["success", "failure", "pending"],
+      index: true,
+    },
   },
   {
     timestamps: false, // We use custom timestamp field
@@ -53,8 +69,10 @@ const AuditLogSchema = new Schema<IAuditLog>(
 
 // Compound indexes for common queries
 AuditLogSchema.index({ documentId: 1, timestamp: -1 });
+AuditLogSchema.index({ claimId: 1, timestamp: -1 });
 AuditLogSchema.index({ user_id: 1, timestamp: -1 });
 AuditLogSchema.index({ action: 1, timestamp: -1 });
+AuditLogSchema.index({ action: 1, result: 1, timestamp: -1 });
 
 export const AuditLog = mongoose.model<IAuditLog>(
   "AuditLog",

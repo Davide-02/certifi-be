@@ -1,7 +1,7 @@
 import { Response } from "express";
 import { TenantRequest } from "../middleware/tenant";
 import { BlockchainService } from "../services/BlockchainService";
-import { Certification } from "../models/Certification";
+import { DocumentService } from "../services/DocumentService";
 import { generateSHA256 } from "../utils/hash";
 import { ErrorResponse } from "../dto/api.dto";
 
@@ -18,19 +18,99 @@ export class VerificationController {
         return;
       }
 
-      const certification = await Certification.findOne({ fileHash: hash }).exec();
-      if (!certification) {
-        res.json({ verified: false, hash, status: "not_found" });
+      const document = await DocumentService.findByFileHash(hash);
+      if (!document) {
+        res.json({
+          verified: false,
+          hash,
+          status: "not_found",
+          message: "Nessun documento con questo hash",
+          document: null,
+          certification: null,
+          on_chain_status: null,
+        });
         return;
       }
 
-      const blockchainVerify = await BlockchainService.certifyHash(hash);
+      const documentData = {
+        id: document.id,
+        originalFileName: document.originalFileName,
+        fileHash: document.fileHash,
+        fileSize: document.fileSize,
+        mimeType: document.mimeType,
+        status: document.status,
+        uploadedAt: document.uploadedAt?.toISOString?.(),
+        createdAt: document.createdAt?.toISOString?.(),
+        updatedAt: document.updatedAt?.toISOString?.(),
+        roles: document.roles ?? [],
+      };
+
+      const certificationData = document.certification
+        ? {
+            blockchainTxHash: document.certification.blockchainTxHash,
+            certifiedAt: document.certification.certifiedAt.toISOString(),
+            validUntil: document.certification.validUntil
+              ? new Date(document.certification.validUntil).toISOString()
+              : null,
+            certificationPolicy: document.certification.certificationPolicy,
+          }
+        : null;
+
+      const onChain = await BlockchainService.isHashCertifiedOnChain(hash);
+      const validUntil = document.certification?.validUntil;
+      const isExpired =
+        validUntil != null && new Date(validUntil) < new Date();
+
+      if (isExpired && document.status === "certified") {
+        await DocumentService.checkAndExpireDocument(document.id);
+        document.status = "expired";
+        documentData.status = "expired";
+      }
+
+      let verified: boolean;
+      let status: string;
+      let message: string | undefined;
+
+      if (document.status === "certified" || document.status === "expired") {
+        if (document.certification) {
+          if (onChain) {
+            verified = !isExpired;
+            status = isExpired ? "expired" : "verified";
+            message = isExpired
+              ? "Documento certificato ma scaduto (validità superata)."
+              : undefined;
+          } else {
+            verified = false;
+            status = "blockchain_mismatch";
+            message = "Documento non trovato sulla blockchain.";
+          }
+        } else {
+          verified = false;
+          status = document.status || "not_certified";
+        }
+      } else {
+        verified = false;
+        status = document.status || "not_certified";
+        message =
+          status === "analyzed"
+            ? "Documento analizzato, non ancora certificato."
+            : status === "pending" || status === "analyzing"
+              ? "Documento in elaborazione."
+              : status === "rejected" || status === "failed"
+                ? "Documento non certificabile."
+                : undefined;
+      }
+
       res.json({
-        verified: true,
         hash,
-        status: "verified",
-        certified_at: certification.certifiedAt.toISOString(),
-        tx_hash: certification.blockchainTxHash,
+        verified,
+        status,
+        message,
+        is_expired: document.certification ? isExpired : undefined,
+        valid_until: certificationData?.validUntil ?? undefined,
+        on_chain_status: onChain ? "registered" : "not_registered",
+        document: documentData,
+        certification: certificationData,
       });
     } catch (error) {
       res.status(500).json({

@@ -1,16 +1,25 @@
-import mongoose, { Schema, Document as MongoDocument, Model } from "mongoose";
+import mongoose, { Schema, Document as MongoDocument, Model, Types } from "mongoose";
+
+export interface DocumentRole {
+  roleType: "holder" | "issuer" | "verifier";
+  entityType: "individual" | "organization";
+  userId?: Types.ObjectId; // If entityType is "individual"
+  organizationId?: number; // If entityType is "organization" (reference to Company)
+  assignedAt: Date;
+}
 
 export interface IDocument extends MongoDocument {
   id: string; // UUID or hash-based ID
-  companyId: number; // Reference to Company
+  companyId: number; // Reference to Company (tenant/issuer company)
   originalFileName: string;
   fileHash: string; // SHA-256 hash of binary content
   fileSize: number;
   mimeType: string;
   storageKey: string; // S3/R2 key for secure storage
-  uploadedBy: number; // User ID
+  uploadedBy: Types.ObjectId; // User MongoDB ObjectId
   uploadedAt: Date;
-  status: "pending" | "analyzing" | "analyzed" | "certified" | "rejected" | "failed";
+  roles: DocumentRole[]; // Array of roles (holder, issuer, verifier) with references to users/companies
+  status: "pending" | "analyzing" | "analyzed" | "certified" | "expired" | "rejected" | "failed";
   createdAt: Date;
   updatedAt: Date;
 }
@@ -53,16 +62,50 @@ const DocumentSchema = new Schema<IDocument>(
       required: true,
     },
     uploadedBy: {
-      type: Number,
+      type: Schema.Types.ObjectId,
+      ref: "User",
       required: true,
+      index: true,
     },
     uploadedAt: {
       type: Date,
       default: Date.now,
     },
+    roles: [
+      {
+        roleType: {
+          type: String,
+          enum: ["holder", "issuer", "verifier"],
+          required: true,
+        },
+        entityType: {
+          type: String,
+          enum: ["individual", "organization"],
+          required: true,
+        },
+        userId: {
+          type: Schema.Types.ObjectId,
+          ref: "User",
+          required: function (this: DocumentRole) {
+            return this.entityType === "individual";
+          },
+        },
+        organizationId: {
+          type: Number,
+          ref: "Company",
+          required: function (this: DocumentRole) {
+            return this.entityType === "organization";
+          },
+        },
+        assignedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
     status: {
       type: String,
-      enum: ["pending", "analyzing", "analyzed", "certified", "rejected", "failed"],
+      enum: ["pending", "analyzing", "analyzed", "certified", "expired", "rejected", "failed"],
       default: "pending",
       index: true,
     },

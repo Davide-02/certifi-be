@@ -39,7 +39,7 @@ export async function createUser(req: Request, res: Response) {
     }
 
     // Validazione ruolo
-    const allowedRoles = ["admin", "issuer", "verifier"];
+    const allowedRoles = ["admin", "issuer", "verifier", "holder", "auditor"];
     if (role && !allowedRoles.includes(role)) {
       return res.status(400).json({
         success: false,
@@ -105,7 +105,7 @@ export async function createUser(req: Request, res: Response) {
       success: true,
       message: "Utente creato con successo",
       user: {
-        id: newUser.id,
+        id: newUser._id.toString(),
         email: newUser.email,
         username: newUser.username,
         name: newUser.name,
@@ -142,16 +142,9 @@ export async function createUser(req: Request, res: Response) {
 export async function getUserById(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    const userId = parseInt(id, 10);
 
-    if (isNaN(userId) || userId < 1) {
-      return res.status(400).json({
-        success: false,
-        error: "ID utente non valido (deve essere un numero positivo)",
-      });
-    }
-
-    const user = await User.findOne({ id: userId });
+    // id è ora l'_id MongoDB
+    const user = await User.findById(id);
 
     if (!user) {
       return res.status(404).json({
@@ -163,7 +156,7 @@ export async function getUserById(req: Request, res: Response) {
     return res.json({
       success: true,
       user: {
-        id: user.id,
+        id: user._id.toString(),
         email: user.email,
         username: user.username,
         name: user.name,
@@ -196,7 +189,7 @@ export async function getUsers(req: Request, res: Response) {
     return res.json({
       success: true,
       users: users.map((user) => ({
-        id: user.id,
+        id: user._id.toString(),
         email: user.email,
         username: user.username,
         name: user.name,
@@ -226,18 +219,11 @@ export async function getUsers(req: Request, res: Response) {
 export async function updateUser(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    const userId = parseInt(id, 10);
+    // id è ora l'_id MongoDB
     const { email, username, password, name, surname, role, status, isActive } =
       req.body;
 
-    if (isNaN(userId) || userId < 1) {
-      return res.status(400).json({
-        success: false,
-        error: "ID utente non valido (deve essere un numero positivo)",
-      });
-    }
-
-    const user = await User.findOne({ id: userId });
+    const user = await User.findById(id);
 
     if (!user) {
       return res.status(404).json({
@@ -259,7 +245,7 @@ export async function updateUser(req: Request, res: Response) {
       // Verifica che email non sia già usata da un altro utente
       const existingEmail = await User.findOne({
         email: email.toLowerCase().trim(),
-        id: { $ne: userId },
+        _id: { $ne: id },
       });
       if (existingEmail) {
         return res.status(409).json({
@@ -270,12 +256,12 @@ export async function updateUser(req: Request, res: Response) {
       user.email = email.toLowerCase().trim();
     }
 
-    // Verifica che username non sia già usato da un altro utente
-    if (username) {
-      const existingUsername = await User.findOne({
-        username: username.trim(),
-        id: { $ne: userId },
-      });
+      // Verifica che username non sia già usato da un altro utente
+      if (username) {
+        const existingUsername = await User.findOne({
+          username: username.trim(),
+          _id: { $ne: id },
+        });
       if (existingUsername) {
         return res.status(409).json({
           success: false,
@@ -302,7 +288,7 @@ export async function updateUser(req: Request, res: Response) {
 
     // Validazione ruolo
     if (role) {
-      const allowedRoles = ["admin", "issuer", "verifier"];
+      const allowedRoles = ["admin", "issuer", "verifier", "holder", "auditor"];
       if (!allowedRoles.includes(role)) {
         return res.status(400).json({
           success: false,
@@ -337,7 +323,7 @@ export async function updateUser(req: Request, res: Response) {
       success: true,
       message: "Utente aggiornato con successo",
       user: {
-        id: user.id,
+        id: user._id.toString(),
         email: user.email,
         username: user.username,
         name: user.name,
@@ -375,17 +361,10 @@ export async function updateUser(req: Request, res: Response) {
 export async function patchUser(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    const userId = parseInt(id, 10);
+    // id è ora l'_id MongoDB
     const updateData = req.body;
 
-    if (isNaN(userId) || userId < 1) {
-      return res.status(400).json({
-        success: false,
-        error: "ID utente non valido (deve essere un numero positivo)",
-      });
-    }
-
-    const user = await User.findOne({ id: userId });
+    const user = await User.findById(id);
 
     if (!user) {
       return res.status(404).json({
@@ -406,7 +385,7 @@ export async function patchUser(req: Request, res: Response) {
 
       const existingEmail = await User.findOne({
         email: updateData.email.toLowerCase().trim(),
-        id: { $ne: userId },
+        _id: { $ne: id },
       });
       if (existingEmail) {
         return res.status(409).json({
@@ -421,7 +400,7 @@ export async function patchUser(req: Request, res: Response) {
     if (updateData.username) {
       const existingUsername = await User.findOne({
         username: updateData.username.trim(),
-        id: { $ne: userId },
+        _id: { $ne: id },
       });
       if (existingUsername) {
         return res.status(409).json({
@@ -450,7 +429,7 @@ export async function patchUser(req: Request, res: Response) {
 
     // Validazione ruolo
     if (updateData.role) {
-      const allowedRoles = ["admin", "issuer", "verifier"];
+      const allowedRoles = ["admin", "issuer", "verifier", "holder", "auditor"];
       if (!allowedRoles.includes(updateData.role)) {
         return res.status(400).json({
           success: false,
@@ -485,7 +464,7 @@ export async function patchUser(req: Request, res: Response) {
       success: true,
       message: "Utente aggiornato con successo",
       user: {
-        id: user.id,
+        id: user._id.toString(),
         email: user.email,
         username: user.username,
         name: user.name,
@@ -523,16 +502,9 @@ export async function patchUser(req: Request, res: Response) {
 export async function deleteUser(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    const userId = parseInt(id, 10);
+    // id è ora l'_id MongoDB
 
-    if (isNaN(userId) || userId < 1) {
-      return res.status(400).json({
-        success: false,
-        error: "ID utente non valido (deve essere un numero positivo)",
-      });
-    }
-
-    const user = await User.findOneAndDelete({ id: userId });
+    const user = await User.findByIdAndDelete(id);
 
     if (!user) {
       return res.status(404).json({
@@ -545,7 +517,7 @@ export async function deleteUser(req: Request, res: Response) {
       success: true,
       message: "Utente eliminato con successo",
       user: {
-        id: user.id,
+        id: user._id.toString(),
         email: user.email,
         username: user.username,
       },

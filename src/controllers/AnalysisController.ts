@@ -23,14 +23,6 @@ export class AnalysisController {
         return;
       }
 
-      if (!req.companyId) {
-        res.status(401).json({
-          success: false,
-          error: "Company context required",
-        } as ErrorResponse);
-        return;
-      }
-
       // Extract user ID from request (set by authMiddleware)
       const userId = req.userId;
       if (!userId) {
@@ -54,7 +46,6 @@ export class AnalysisController {
         req.file.buffer,
         req.file.originalname,
         req.file.mimetype || "application/octet-stream",
-        req.companyId,
         userId,
         requestedTasks
       );
@@ -97,9 +88,9 @@ export class AnalysisController {
       let userObjectId = null;
       if (req.userId) {
         try {
-          const { User } = await import("../models/User");
-          const user = await User.findOne({ id: req.userId }).exec();
-          userObjectId = user ? user._id : null;
+          // userId è già l'_id come stringa, convertiamo in ObjectId
+          const { Types } = await import("mongoose");
+          userObjectId = new Types.ObjectId(req.userId);
         } catch {
           // Ignore error
         }

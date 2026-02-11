@@ -1,12 +1,11 @@
 import { Response } from "express";
+import { Types } from "mongoose";
 import { TenantRequest } from "../middleware/tenant";
 import { ErrorResponse } from "../dto/api.dto";
 import { DocumentService } from "../services/DocumentService";
 import { DocumentModel } from "../services/DocumentService";
 import { AuditService } from "../services/AuditService";
 import { User } from "../models/User";
-import { Certification } from "../models/Certification";
-import { Types } from "mongoose";
 
 /**
  * Controller for document management
@@ -29,14 +28,6 @@ export class DocumentController {
    */
   static async updateStatus(req: TenantRequest, res: Response): Promise<void> {
     try {
-      if (!req.companyId) {
-        res.status(401).json({
-          success: false,
-          error: "Company context required",
-        } as ErrorResponse);
-        return;
-      }
-
       const { id } = req.params;
       const { status } = req.body;
 
@@ -57,7 +48,14 @@ export class DocumentController {
       }
 
       // Validate status
-      const allowedStatuses: Array<"pending" | "analyzing" | "analyzed" | "certified" | "rejected" | "failed"> = [
+      const allowedStatuses: Array<
+        | "pending"
+        | "analyzing"
+        | "analyzed"
+        | "certified"
+        | "rejected"
+        | "failed"
+      > = [
         "pending",
         "analyzing",
         "analyzed",
@@ -76,7 +74,6 @@ export class DocumentController {
 
       // Extract user ID from request (set by authMiddleware)
       const userId = req.userId;
-
       if (!userId) {
         res.status(401).json({
           success: false,
@@ -85,8 +82,8 @@ export class DocumentController {
         return;
       }
 
-      // Get user and verify role
-      const user = await User.findOne({ id: userId }).exec();
+      // Get user and verify role (userId è già l'_id come stringa)
+      const user = await User.findById(userId).exec();
       if (!user) {
         res.status(401).json({
           success: false,
@@ -99,7 +96,7 @@ export class DocumentController {
       const userObjectId = user._id;
 
       // Load document to check if it's certified
-      const document = await DocumentService.getById(id, req.companyId);
+      const document = await DocumentService.getById(id);
       if (!document) {
         res.status(404).json({
           success: false,
@@ -109,7 +106,7 @@ export class DocumentController {
       }
 
       // If document is certified, verify that the user is the issuer who certified it
-      if (document.status === "certified") {
+      if (document.status === "certified" && document.certification) {
         // Check user role: must be issuer or admin
         if (user.role !== "issuer" && user.role !== "admin") {
           res.status(403).json({
@@ -119,22 +116,12 @@ export class DocumentController {
           return;
         }
 
-        // Find the certification record
-        const certification = await Certification.findOne({
-          documentId: document.id,
-          companyId: req.companyId,
-        }).exec();
-
-        if (!certification) {
-          res.status(404).json({
-            success: false,
-            error: "Certification record not found",
-          } as ErrorResponse);
-          return;
-        }
-
         // Verify that the current user is the one who certified it (or admin)
-        if (user.role !== "admin" && certification.certifiedBy !== userId) {
+        const userObjectId = user._id;
+        if (
+          user.role !== "admin" &&
+          !document.certification.certifiedBy.equals(userObjectId)
+        ) {
           res.status(403).json({
             success: false,
             error: "You can only modify documents that you certified",
@@ -143,12 +130,7 @@ export class DocumentController {
         }
       }
 
-      // Update status with company check (ensures multi-tenant isolation)
-      const updatedDocument = await DocumentService.updateStatusWithCompanyCheck(
-        id,
-        req.companyId,
-        status
-      );
+      const updatedDocument = await DocumentService.updateStatus(id, status);
 
       if (!updatedDocument) {
         res.status(404).json({
@@ -188,19 +170,142 @@ export class DocumentController {
   }
 
   /**
-   * GET /documents/my-certifications
-   * Get all documents certified by the current issuer
+   * PATCH /documents/:id/valid-until
+   * Update certification validity end date (only for certified documents)
    */
-  static async getMyCertifications(req: TenantRequest, res: Response): Promise<void> {
+  static async updateValidUntil(req: TenantRequest, res: Response): Promise<void> {
     try {
-      if (!req.companyId) {
-        res.status(401).json({
+      const { id } = req.params;
+      const { valid_until } = req.body;
+
+      if (!id) {
+        res.status(400).json({
           success: false,
-          error: "Company context required",
+          error: "Document ID is required",
         } as ErrorResponse);
         return;
       }
 
+      const userId = req.userId;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: "Authentication required",
+        } as ErrorResponse);
+        return;
+      }
+
+      const user = await User.findById(userId).exec();
+      if (!user) {
+        res.status(401).json({
+          success: false,
+          error: "User not found",
+        } as ErrorResponse);
+        return;
+      }
+
+      if (user.role !== "issuer" && user.role !== "admin") {
+        res.status(403).json({
+          success: false,
+          error: "Only issuers or admins can update validity date",
+        } as ErrorResponse);
+        return;
+      }
+
+      const document = await DocumentService.getById(id);
+      if (!document) {
+        res.status(404).json({
+          success: false,
+          error: "Document not found",
+        } as ErrorResponse);
+        return;
+      }
+
+      if (!document.certification) {
+        res.status(400).json({
+          success: false,
+          error: "Document is not certified",
+        } as ErrorResponse);
+        return;
+      }
+
+      if (
+        user.role !== "admin" &&
+        !document.certification.certifiedBy.equals(user._id)
+      ) {
+        res.status(403).json({
+          success: false,
+          error: "You can only modify documents that you certified",
+        } as ErrorResponse);
+        return;
+      }
+
+      const validUntilDate =
+        valid_until === null ||
+        valid_until === undefined ||
+        valid_until === ""
+          ? null
+          : new Date(valid_until as string);
+      if (validUntilDate !== null && isNaN(validUntilDate.getTime())) {
+        res.status(400).json({
+          success: false,
+          error: "valid_until must be a valid ISO date or null",
+        } as ErrorResponse);
+        return;
+      }
+
+      const updated = await DocumentService.updateCertificationValidUntil(
+        id,
+        valid_until == null || valid_until === "" ? null : validUntilDate
+      );
+      if (!updated) {
+        res.status(404).json({
+          success: false,
+          error: "Document not found or not certified",
+        } as ErrorResponse);
+        return;
+      }
+
+      await AuditService.log({
+        action: "updated",
+        documentId: updated.id,
+        user_id: user._id,
+        notes: `Valid until updated to ${validUntilDate != null ? validUntilDate.toISOString() : "per sempre"}`,
+      });
+
+      res.status(200).json({
+        success: true,
+        document: {
+          id: updated.id,
+          status: updated.status,
+          valid_until: updated.certification?.validUntil
+            ? new Date(updated.certification.validUntil).toISOString()
+            : null,
+          updatedAt: updated.updatedAt,
+        },
+      });
+    } catch (error) {
+      console.error("Error updating valid until:", error);
+
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      res.status(500).json({
+        success: false,
+        error: errorMessage,
+      } as ErrorResponse);
+    }
+  }
+
+  /**
+   * GET /documents/my-certifications
+   * Get all documents certified by the current issuer
+   */
+  static async getMyCertifications(
+    req: TenantRequest,
+    res: Response,
+  ): Promise<void> {
+    try {
       // Extract user ID from request (set by authMiddleware)
       const userId = req.userId;
 
@@ -212,8 +317,8 @@ export class DocumentController {
         return;
       }
 
-      // Get user and verify role
-      const user = await User.findOne({ id: userId }).exec();
+      // Get user and verify role (userId è già l'_id come stringa)
+      const user = await User.findById(userId).exec();
       if (!user) {
         res.status(401).json({
           success: false,
@@ -221,7 +326,6 @@ export class DocumentController {
         } as ErrorResponse);
         return;
       }
-
       // Only issuers and admins can see their certifications
       if (user.role !== "issuer" && user.role !== "admin") {
         res.status(403).json({
@@ -234,65 +338,48 @@ export class DocumentController {
       // Parse query parameters for pagination
       const limit = parseInt(req.query.limit as string) || 50;
       const offset = parseInt(req.query.offset as string) || 0;
-      const sortBy = (req.query.sortBy as string) || "certifiedAt";
+      const sortBy = (req.query.sortBy as string) || "createdAt";
       const sortOrder = (req.query.sortOrder as string) === "asc" ? 1 : -1;
 
-      // Find all certifications by this issuer in this company
-      const certifications = await Certification.find({
-        certifiedBy: userId,
-        companyId: req.companyId,
+      const userObjectId = new Types.ObjectId(userId);
+      const sortField =
+        sortBy === "certifiedAt" ? "certification.certifiedAt" : sortBy;
+
+      const documents = await DocumentModel.find({
+        uploadedBy: userObjectId,
       })
-        .sort({ [sortBy]: sortOrder })
+        .sort({ [sortField]: sortOrder })
         .skip(offset)
         .limit(limit)
         .exec();
 
-      // Get total count for pagination
-      const totalCount = await Certification.countDocuments({
-        certifiedBy: userId,
-        companyId: req.companyId,
+      const totalCount = await DocumentModel.countDocuments({
+        uploadedBy: userObjectId,
       }).exec();
 
-      // Get document IDs from certifications
-      const documentIds = certifications.map((cert) => cert.documentId);
-
-      // Fetch all documents
-      const documents = await DocumentModel.find({
-        id: { $in: documentIds },
-        companyId: req.companyId,
-      }).exec();
-
-      // Create a map for quick lookup
-      const documentMap = new Map(documents.map((doc) => [doc.id, doc]));
-
-      // Combine certification and document data
-      const results = certifications
-        .map((cert) => {
-          const document = documentMap.get(cert.documentId);
-          if (!document) {
-            return null; // Skip if document not found
-          }
-
-          return {
-            document: {
-              id: document.id,
-              originalFileName: document.originalFileName,
-              fileHash: document.fileHash,
-              fileSize: document.fileSize,
-              mimeType: document.mimeType,
-              status: document.status,
-              uploadedAt: document.uploadedAt,
-              createdAt: document.createdAt,
-              updatedAt: document.updatedAt,
-            },
-            certification: {
-              blockchainTxHash: cert.blockchainTxHash,
-              certifiedAt: cert.certifiedAt,
-              certificationPolicy: cert.certificationPolicy,
-            },
-          };
-        })
-        .filter((item) => item !== null);
+      const results = documents.map((document) => ({
+        document: {
+          id: document.id,
+          originalFileName: document.originalFileName,
+          fileHash: document.fileHash,
+          fileSize: document.fileSize,
+          mimeType: document.mimeType,
+          status: document.status,
+          uploadedAt: document.uploadedAt,
+          createdAt: document.createdAt,
+          updatedAt: document.updatedAt,
+        },
+        certification: document.certification
+          ? {
+              blockchainTxHash: document.certification.blockchainTxHash,
+              certifiedAt: document.certification.certifiedAt,
+              certificationPolicy: document.certification.certificationPolicy,
+              validUntil: document.certification.validUntil
+                ? document.certification.validUntil
+                : null,
+            }
+          : null,
+      }));
 
       res.status(200).json({
         success: true,
@@ -313,6 +400,28 @@ export class DocumentController {
       res.status(500).json({
         success: false,
         error: errorMessage,
+      } as ErrorResponse);
+    }
+  }
+
+  /**
+   * POST /documents/expire-check
+   * Check and expire all documents that have passed their validUntil date
+   * Can be called periodically (e.g., via cron job)
+   */
+  static async expireDocuments(req: TenantRequest, res: Response): Promise<void> {
+    try {
+      const count = await DocumentService.checkAndExpireDocuments();
+      res.status(200).json({
+        success: true,
+        expired_count: count,
+        message: `Aggiornati ${count} documenti scaduti`,
+      });
+    } catch (error) {
+      console.error("Error expiring documents:", error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
       } as ErrorResponse);
     }
   }

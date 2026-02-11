@@ -6,13 +6,13 @@ const JWT_SECRET: string = "certifi-jwt-secret-key-2026-production-change-this";
 const JWT_EXPIRES_IN: string = "24h";
 
 export interface AuthRequest extends Request {
-  userId?: number;
-  userRole?: "admin" | "issuer" | "verifier";
+  userId?: string; // MongoDB _id come stringa
+  userRole?: "admin" | "issuer" | "verifier" | "holder" | "auditor";
 }
 
 export interface JWTPayload {
-  userId: number;
-  role: "admin" | "issuer" | "verifier";
+  userId: string; // MongoDB _id come stringa
+  role: "admin" | "issuer" | "verifier" | "holder" | "auditor";
   email: string;
 }
 
@@ -52,6 +52,11 @@ export function authMiddleware(
   next: NextFunction
 ): void {
   try {
+    if (req.method === "OPTIONS") {
+      next();
+      return;
+    }
+
     const authReq = req as AuthRequest;
     
     // Extract token from Authorization header

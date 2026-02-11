@@ -39,7 +39,7 @@ export async function register(req: Request, res: Response) {
     }
 
     // Validazione ruolo
-    const allowedRoles = ["admin", "issuer", "verifier"];
+    const allowedRoles = ["admin", "issuer", "verifier", "holder", "auditor"];
     if (role && !allowedRoles.includes(role)) {
       return res.status(400).json({
         success: false,
@@ -86,9 +86,9 @@ export async function register(req: Request, res: Response) {
 
     await newUser.save();
 
-    // Genera JWT token con userId, role e email
+    // Genera JWT token con userId (_id), role e email
     const token = generateToken({
-      userId: newUser.id,
+      userId: newUser._id.toString(),
       role: newUser.role,
       email: newUser.email,
     });
@@ -99,7 +99,7 @@ export async function register(req: Request, res: Response) {
       message: "Utente registrato con successo",
       token, // JWT token nella risposta
       user: {
-        id: newUser.id,
+        id: newUser._id.toString(),
         email: newUser.email,
         username: newUser.username,
         name: newUser.name,
@@ -189,9 +189,9 @@ export async function login(req: Request, res: Response) {
     user.lastLoginAt = new Date();
     await user.save();
 
-    // Genera JWT token con userId, role e email
+    // Genera JWT token con userId (_id), role e email
     const token = generateToken({
-      userId: user.id,
+      userId: user._id.toString(),
       role: user.role,
       email: user.email,
     });
@@ -201,7 +201,7 @@ export async function login(req: Request, res: Response) {
       success: true,
       token, // JWT token nella risposta
       user: {
-        id: user.id,
+        id: user._id.toString(),
         email: user.email,
         username: user.username,
         name: user.name,

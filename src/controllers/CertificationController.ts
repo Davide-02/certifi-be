@@ -14,15 +14,7 @@ export class CertificationController {
    */
   static async certify(req: TenantRequest, res: Response): Promise<void> {
     try {
-      if (!req.companyId) {
-        res.status(401).json({
-          success: false,
-          error: "Company context required",
-        } as ErrorResponse);
-        return;
-      }
-
-      const { document_id } = req.body;
+      const { document_id, valid_until } = req.body;
 
       if (!document_id) {
         res.status(400).json({
@@ -42,14 +34,17 @@ export class CertificationController {
         return;
       }
 
-      // Certify document (must be already analyzed)
+      const validUntil =
+        valid_until === null || valid_until === undefined || valid_until === ""
+          ? null
+          : valid_until;
+
       const result = await CertificationOnlyService.certifyDocument(
         document_id,
-        req.companyId,
-        userId
+        userId,
+        validUntil
       );
 
-      // Return certification result
       const response = {
         success: true,
         document_id: result.document.id,
@@ -57,6 +52,9 @@ export class CertificationController {
         certification: {
           tx_hash: result.certification.blockchainTxHash,
           certified_at: result.certification.certifiedAt.toISOString(),
+          valid_until: result.certification.validUntil
+            ? result.certification.validUntil.toISOString()
+            : null,
         },
       };
 
@@ -71,9 +69,9 @@ export class CertificationController {
       let userObjectId = null;
       if (req.userId) {
         try {
-          const { User } = await import("../models/User");
-          const user = await User.findOne({ id: req.userId }).exec();
-          userObjectId = user ? user._id : null;
+          // userId è già l'_id come stringa, convertiamo in ObjectId
+          const { Types } = await import("mongoose");
+          userObjectId = new Types.ObjectId(req.userId);
         } catch {
           // Ignore error
         }

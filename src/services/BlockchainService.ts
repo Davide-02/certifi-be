@@ -1,7 +1,11 @@
-import fetch from "node-fetch";
-import { storeHash } from "../utils/blockchain";
+import { storeHash, verifyHashOnChain } from "../utils/blockchain";
 
 export class BlockchainService {
+  /** Check if hash is already certified on blockchain */
+  static async isHashCertifiedOnChain(hash: string): Promise<boolean> {
+    return verifyHashOnChain(hash);
+  }
+
   static async certifyHash(
     hash: string,
     metadata?: { document_family?: string; company_id?: number }

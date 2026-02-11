@@ -1,11 +1,15 @@
-import { Company, ICompany } from "../models/Company";
-import { Certification, ICertification } from "../models/Certification";
+import { ICompany } from "../models/Company";
 import { AIAnalysis } from "../models/AIAnalysis";
 import { BlockchainService } from "./BlockchainService";
-import { DocumentService, IDocument } from "./DocumentService";
+import {
+  DocumentService,
+  IDocument,
+  CertificationData,
+} from "./DocumentService";
 import { AuditService } from "./AuditService";
 import { User } from "../models/User";
 import { Types } from "mongoose";
+import { ensureCompany } from "../utils/ensureCompany";
 
 /**
  * Service for certification only (document must be already analyzed)
@@ -13,12 +17,12 @@ import { Types } from "mongoose";
  */
 export class CertificationOnlyService {
   /**
-   * Get User MongoDB ObjectId from numeric ID
+   * Get User MongoDB ObjectId from _id string
    */
-  private static async getUserObjectId(userId: number): Promise<Types.ObjectId | null> {
+  private static async getUserObjectId(userId: string): Promise<Types.ObjectId | null> {
     try {
-      const user = await User.findOne({ id: userId }).exec();
-      return user ? user._id : null;
+      // userId è già l'_id come stringa, convertiamo in ObjectId
+      return new Types.ObjectId(userId);
     } catch {
       return null;
     }
@@ -27,19 +31,20 @@ export class CertificationOnlyService {
    * Certify an already-analyzed document:
    * 1. Load document and AI analysis
    * 2. Check company certification policy
-   * 3. If certifiable, send to blockchain
-   * 4. Create certification record
+   * 3. Verify via blockchain if hash is already certified (skip duplicate)
+   * 4. If not on chain: send to blockchain
+   * 5. Create certification record
    */
   static async certifyDocument(
     documentId: string,
-    companyId: number,
-    userId: number
+    userId: string, // MongoDB _id come stringa
+    validUntil?: string | Date | null // ISO string o Date; null/omit = per sempre
   ): Promise<{
     document: IDocument;
-    certification: ICertification;
+    certification: CertificationData;
   }> {
     // 1. Load document
-    const document = await DocumentService.getById(documentId, companyId);
+    const document = await DocumentService.getById(documentId);
     if (!document) {
       throw new Error(`Document ${documentId} not found`);
     }
@@ -53,7 +58,7 @@ export class CertificationOnlyService {
     // 2. Load latest AI analysis
     const aiAnalysis = await AIAnalysis.findOne({
       documentId: document.id,
-      companyId,
+      companyId: 1,
     })
       .sort({ createdAt: -1 })
       .exec();
@@ -62,11 +67,8 @@ export class CertificationOnlyService {
       throw new Error(`AI analysis not found for document ${documentId}`);
     }
 
-    // 3. Get company certification policy
-    const company = await Company.findOne({ id: companyId }).exec();
-    if (!company) {
-      throw new Error(`Company ${companyId} not found`);
-    }
+    // 3. Get company certification policy (create default if doesn't exist)
+    const company = await ensureCompany(1);
 
     // 4. Make certification decision based on policy
     const decision = this.makeCertificationDecision(aiAnalysis, company);
@@ -83,22 +85,71 @@ export class CertificationOnlyService {
       throw new Error(decision.reason || "Document does not meet certification policy");
     }
 
-    // 5. Send to blockchain
+    // 5. Check if hash already on blockchain (avoid duplicate certification)
+    const alreadyOnChain = await BlockchainService.isHashCertifiedOnChain(
+      document.fileHash
+    );
+    if (alreadyOnChain) {
+      const existingDocWithHash = await DocumentService.findCertifiedByFileHash(
+        document.fileHash
+      );
+      if (existingDocWithHash?.certification) {
+        if (existingDocWithHash.id === document.id) {
+          throw new Error(
+            "Documento già certificato. Questo documento è stato già certificato sulla blockchain."
+          );
+        }
+        const userObjectId = await this.getUserObjectId(userId);
+        if (!userObjectId) {
+          throw new Error(`Invalid user ID: ${userId}`);
+        }
+        const validUntilDate = this.parseValidUntil(validUntil);
+        const certification: CertificationData = {
+          blockchainTxHash: existingDocWithHash.certification.blockchainTxHash,
+          certificationPolicy: {
+            documentFamily: aiAnalysis.documentFamily,
+            confidence: aiAnalysis.confidence,
+            policyVersion: "1.0",
+          },
+          certifiedAt: new Date(),
+          certifiedBy: userObjectId,
+          validUntil: validUntilDate ?? existingDocWithHash.certification.validUntil ?? null,
+        };
+        const updated = await DocumentService.setCertification(
+          document.id,
+          certification
+        );
+        if (!updated) throw new Error(`Failed to certify document ${documentId}`);
+        await AuditService.log({
+          action: "verified",
+          documentId: document.id,
+          user_id: userObjectId,
+          notes: `Document already certified on blockchain. Reused TX: ${existingDocWithHash.certification.blockchainTxHash}`,
+        });
+        return { document: updated, certification };
+      }
+      throw new Error(
+        "File già certificato sulla blockchain. Questo hash è stato certificato precedentemente da un altro sistema."
+      );
+    }
+
+    // 6. Send to blockchain (first time for this hash)
     let blockchainResponse;
     try {
       blockchainResponse = await BlockchainService.certifyHash(
         document.fileHash,
         {
           document_family: aiAnalysis.documentFamily,
-          company_id: companyId,
         }
       );
 
-      // 6. Create certification record
-      const certification = new Certification({
-        documentId: document.id,
-        companyId,
-        fileHash: document.fileHash,
+      const userObjectId = await this.getUserObjectId(userId);
+      if (!userObjectId) {
+        throw new Error(`Invalid user ID: ${userId}`);
+      }
+
+      const validUntilDate = this.parseValidUntil(validUntil);
+      const certification: CertificationData = {
         blockchainTxHash: blockchainResponse.tx_hash,
         certificationPolicy: {
           documentFamily: aiAnalysis.documentFamily,
@@ -106,12 +157,15 @@ export class CertificationOnlyService {
           policyVersion: "1.0",
         },
         certifiedAt: new Date(),
-        certifiedBy: userId,
-      });
+        certifiedBy: userObjectId,
+        validUntil: validUntilDate ?? null,
+      };
 
-      await certification.save();
-
-      await DocumentService.updateStatus(document.id, "certified");
+      const updated = await DocumentService.setCertification(
+        document.id,
+        certification
+      );
+      if (!updated) throw new Error(`Failed to certify document ${documentId}`);
 
       await AuditService.log({
         action: "verified",
@@ -121,7 +175,7 @@ export class CertificationOnlyService {
       });
 
       return {
-        document,
+        document: updated,
         certification,
       };
     } catch (error) {
@@ -134,6 +188,19 @@ export class CertificationOnlyService {
       });
       throw error;
     }
+  }
+
+  private static parseValidUntil(
+    validUntil?: string | Date | null
+  ): Date | null {
+    if (validUntil === null || validUntil === undefined || validUntil === "") {
+      return null;
+    }
+    if (validUntil instanceof Date) {
+      return isNaN(validUntil.getTime()) ? null : validUntil;
+    }
+    const d = new Date(validUntil);
+    return isNaN(d.getTime()) ? null : d;
   }
 
   /**
@@ -149,12 +216,11 @@ export class CertificationOnlyService {
   ): { certifiable: boolean; reason?: string } {
     const policy = company.settings.certificationPolicy;
 
-    // Check confidence threshold
+    // Log low confidence but do not block certification (certify anyway)
     if (aiAnalysis.confidence < policy.minConfidence) {
-      return {
-        certifiable: false,
-        reason: `Confidence ${aiAnalysis.confidence} below threshold ${policy.minConfidence}`,
-      };
+      console.warn(
+        `[CertificationOnlyService] Low confidence (${aiAnalysis.confidence}) below threshold (${policy.minConfidence}) - certifying anyway per policy`
+      );
     }
 
     // Check allowed document families (if whitelist is set)

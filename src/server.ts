@@ -1,6 +1,5 @@
 import "dotenv/config";
 import express from "express";
-import cors from "cors";
 import { login, register } from "./routes/auth";
 import {
   createUser,
@@ -20,33 +19,24 @@ import { authMiddleware } from "./middleware/auth";
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 
-// Middleware CORS - configurazione per permettere tutte le origini
-const corsOptions = {
-  origin: function (origin: string | undefined, callback: Function) {
-    // Permetti tutte le origini in sviluppo
-    callback(null, true);
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-  allowedHeaders: [
-    "Content-Type",
-    "Authorization",
-    "X-Requested-With",
-    "Accept",
-    "Origin",
-    "Access-Control-Request-Method",
-    "Access-Control-Request-Headers",
-    "X-Company-Id",
-    "X-Company-Slug",
-  ],
-  exposedHeaders: ["Content-Length", "Content-Type"],
-  maxAge: 86400, // 24 ore
-};
-
-app.use(cors(corsOptions));
-
-// Handle preflight requests
-app.options("*", cors(corsOptions));
+// CORS: unico middleware che gestisce tutto (preflight + header su ogni risposta)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "*");
+  res.setHeader("Access-Control-Max-Age", "86400");
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
 
 // Middleware
 app.use(express.json());
@@ -63,7 +53,6 @@ app.get("/health", (req, res) => {
 });
 
 // Tutte le route seguenti richiedono autenticazione JWT
-// Middleware di autenticazione applicato a tutte le route protette
 app.use(authMiddleware);
 
 // Routes - Verification (protetta - richiede autenticazione)
